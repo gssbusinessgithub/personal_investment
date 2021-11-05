@@ -1,0 +1,74 @@
+import mplfinance as mpf
+#imports for Stock_Yahoo
+from pandas_datareader import data 
+from pandas_datareader._utils import RemoteDataError
+from pandas import DataFrame
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np 
+from datetime import datetime
+
+# This allows multiple outputs from a single jupyter notebook cell:
+from IPython.core.interactiveshell import InteractiveShell
+InteractiveShell.ast_node_interactivity = "all"
+
+START_DATE = input('Enter Start Date: Year-Month-Day: ')
+END_DATE = str(datetime.now().strftime('%Y-%m-%d'))
+
+USA_STOCK = input('Enter Stock Ticker: ')
+
+def get_data(ticker):
+    try:
+        stock_data = data.DataReader(ticker, # <-- ticker passing from yahoo
+                                    'yahoo',
+                                    START_DATE,
+                                    END_DATE)
+        return stock_data
+    except RemoteDataError:
+        print('No data found for {t}'.format(t=ticker))
+
+# print(get_data(USA_STOCK)) # original method 
+
+#df1 = DataFrame(get_data(USA_STOCK), columns=['High','Low','Open','Close','Volume','Adj Close'])
+#print(df1) # method 2
+
+daily = pd.DataFrame(get_data(USA_STOCK), columns=['High','Low','Open','Close','Volume','Adj Close'])
+print(daily) #new method directly
+
+daily.index.name = 'New_Date'
+daily.shape
+daily.head(3)
+daily.tail(3)
+
+# mpf.plot(daily,type='candle',mav=(20,50,128),volume=True, style='blueskies')
+
+# EMA20 EMA50 and EMA128 
+exp20 = daily['Close'].ewm(span=20, adjust=False).mean()
+exp50 = daily['Close'].ewm(span=50, adjust=False).mean()
+exp128 = daily['Close'].ewm(span=128, adjust=False).mean()
+
+#measure the MACD using exp26-exp12
+exp12 = daily['Close'].ewm(span=12, adjust=False).mean()
+exp26 = daily['Close'].ewm(span=26, adjust=False).mean()
+macd = exp12 - exp26
+
+signal = macd.ewm(span=9, adjust=False).mean()
+histogram = macd - signal 
+
+apds = [mpf.make_addplot(exp20,color='lime'),
+        mpf.make_addplot(exp50,color='c'),
+        mpf.make_addplot(exp128,color='r'), 
+        mpf.make_addplot(histogram,
+                        type='bar',
+                        width=0.7,panel=1,
+                        color= ['g' if x >= 0 else 'r' for x in histogram],
+                        alpha=1,
+                        secondary_y=False,
+                        ),
+        mpf.make_addplot(macd,panel=1,color='fuchsia',secondary_y=True),
+        mpf.make_addplot(signal,panel=1,color='b',secondary_y=True)
+       ]
+
+mpf.plot(daily,type='candle',addplot=apds,figscale=1.1,figratio=(8,5),title='\nMACD of ' + USA_STOCK +' from '+ START_DATE + ' to '+ END_DATE,
+        volume=True,volume_panel=2,panel_ratios=(6,3,2))
+
