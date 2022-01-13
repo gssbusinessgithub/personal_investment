@@ -1,5 +1,5 @@
-# personal_investment
-Python programs for personal investment strategies and analytics -- none of the figures provoked from the code is financial advice.
+# stock_indicators
+Python programs for stock indicators and analysis. 
 
 credits for MACD_V1 -- these are sources that helped me put together MACD_V1:
 
