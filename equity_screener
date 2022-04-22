@@ -1,0 +1,383 @@
+#imports for GUI
+import tkinter as tk 
+from tkinter import *
+from PIL import ImageTk, Image
+import os
+from numpy import loads, place
+
+# for Yahoo Finance 
+from yahoo_fin.stock_info import *
+import yahoo_fin.stock_info as yaf
+import mplfinance as mpf
+
+# for data series and plot
+from pandas_datareader import data 
+from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
+import requests
+import matplotlib.pyplot as plt
+
+# for statistics
+import statistics as st
+
+END_DATE = str(datetime.now().strftime('%Y-%m-%d'))
+CUR_YEAR = int(END_DATE[0:4])
+CUR_MNTH = int(END_DATE[5:7])
+CUR_DAY  = int(END_DATE[8:10])
+
+
+#splash page:
+splash_root = Tk()
+splash_root.geometry("500x250")
+splash_root.title('Equity Screener V1') #image of logo can go here with splash_root.Label()
+splash_root
+
+def main_terminal():
+    splash_root.destroy()
+
+    root = tk.Tk()
+    root.option_add('*Font', 'Courier', '15')
+    root.title('V1_terminal')
+    root.geometry('750x1600')
+    root.configure(bg='black')
+
+    deli    = 200
+    str_var = tk.StringVar()
+    label = tk.Label(root, textvariable=str_var, height=3)
+
+    def shift():
+        shift.msg = shift.msg[1:] + shift.msg[0]
+        str_var.set(shift.msg)
+        root.after(deli, shift)
+
+    CURRENT = datetime.now()
+    #print('current date is : ' + str(CURRENT))
+    SP_500   = round(get_live_price("^GSPC"), 2)
+    DOW      = round(get_live_price("^DJI"), 2)
+    NASDAQ   = round(get_live_price("^IXIC"), 2)
+    RUSSELL  = round(get_live_price("^RUT"), 2)
+    NIKKEI   = round(get_live_price("^N225"), 2)
+    SHANGHAI = round(get_live_price("000001.SS"), 2)
+    FTSE     = round(get_live_price("^FTSE"), 2)
+
+    shift.msg = '        ' + ' S&P 500 ' + str(SP_500) + '        ' + ' DOW '+ str(DOW) \
+        + '        ' + ' NASDAQ ' + str(NASDAQ) + '        ' + ' RUSSELL 2000 ' + str(RUSSELL) \
+        + '        ' + ' NIKKEI 225 ' + str(NIKKEI) + '        ' + ' SSE ' +  str(SHANGHAI) \
+        + '        ' + ' FTSE 100 ' + str(FTSE)
+
+    shift()
+    label.pack(fill=X)
+
+    def retrieve_data():
+        ''' Retrieve price data of a stock from yahoo'''
+        global retrieve
+        global retrieve2
+        retrieve = stock_tick.get("1.0","end-1c")
+        retrieve2 = date.get("1.0","end-1c")
+        #print(type(retrieve))
+        output.insert(END, ' > ticker confirmed entry: ' + str(retrieve) + ' type is: ' + str(type(str(stock_tick))) + '\n'
+                        + ' > start date confirmed entry: ' + str(date) + ' type is: ' + str(type(str(date))) + '\n' )
+        stock_data = data.DataReader(str(retrieve), 'yahoo', str(retrieve2), END_DATE)
+        output.insert(END, ' > stock data successfully retrieved for: '+ str(retrieve) + ' starting from date ' + str(retrieve2) + '\n')
+
+        global daily
+        daily = pd.DataFrame(stock_data, columns=['High','Low','Open','Close','Volume','Adj Close'])
+        #d_chg = daily.pct_change(['Close'])
+        #daily['% Change'] = d_chg
+        output.insert(END, daily)
+
+    def std_dev():
+        exp20 = daily['Close'].ewm(span=20, adjust=False).mean()
+        daily['stdev'] = st.stdev(exp20)
+        stdev = daily['stdev']
+        daily['stdev_pos'] = exp20 + stdev
+        daily['stdev_pos'] = exp20 - stdev
+
+
+    # EMA results in less sensitivity compared to SMA; using EMA
+    def rsi_stddev():
+
+        # Bollinger Bands
+        exp20 = daily['Close'].ewm(span=20, adjust=False).mean()
+        exp128 = daily['Close'].ewm(span=128, adjust=False).mean()
+        exp200 = daily['Close'].ewm(span=200, adjust=False).mean()
+
+        daily['New_col'] = -20
+        daily['New_col2'] = -80
+
+        daily['stdev'] = st.stdev(exp20)
+        stdev = daily['stdev']
+        daily['stdev_pos'] = exp20 + stdev
+        daily['stdev_neg'] = exp20 - stdev
+        stdev_pos = daily['stdev_pos']
+        stdev_neg = daily['stdev_neg']
+
+        # RSI
+        delta_close = daily['Close'].diff()
+
+        gain = delta_close.clip(lower=0)
+        loss = -1*delta_close.clip(upper=0)
+
+        # 20 periods to match 20 ema
+        ema_gain = gain.ewm(com = 20 - 1, adjust=True, min_periods = 20).mean()
+        ema_loss = loss.ewm(com = 20 - 1, adjust=True, min_periods = 20).mean()
+
+
+        ratio = ema_gain / ema_loss 
+
+        daily['rsi'] = 100 - (100/(1+ratio))
+        rsi = daily['rsi']
+        daily['overbought'] = 70
+        daily['oversold'] = 30
+
+        overbought = daily['overbought']
+        oversold = daily['oversold']
+
+        #williams R
+        high = daily['High'].rolling(14).max()
+        low  = daily['Low'].rolling(14).min()
+        wr = (-100 * ((high - daily['Close']) / (high - low)))
+        line_20 = daily['New_col']
+        line_80 = daily['New_col2']
+
+        output.insert(END, ' > RSI, Standard Deviation, R% Chart Run ' + '\n')
+
+        apds = [mpf.make_addplot(exp20,color='g'),
+            mpf.make_addplot(exp128,color='black'),
+            mpf.make_addplot(exp200,color='r'), 
+            mpf.make_addplot(stdev_pos,color='fuchsia'),
+            mpf.make_addplot(stdev_neg,color='fuchsia'), 
+            mpf.make_addplot(rsi,
+                            type='line',
+                            width=0.7,panel=1,
+                            color= 'b' ,
+                            alpha=1,
+                            secondary_y=False,
+                            ),
+            mpf.make_addplot(overbought,panel=1,color='g',secondary_y=False),
+            mpf.make_addplot(oversold,panel=1,color='r',secondary_y=False),
+            mpf.make_addplot(wr,
+                            type='line',
+                            width=0.7,panel=2,
+                            color= 'b' ,
+                            alpha=1,
+                            secondary_y=False,
+                            ),
+            mpf.make_addplot(line_20,panel=2,color='g',secondary_y=False),
+            mpf.make_addplot(line_80,panel=2,color='r',secondary_y=False),
+            ]
+        mpf.plot(daily,type='candle',addplot=apds,figscale=1.1,figratio=(8,5),title='\nStandard Deviation, RSI, Williams % R ' + retrieve +' from '+ retrieve2 + ' to '+ END_DATE,
+            volume=False,panel_ratios=(6,3,2))
+
+        output.insert(END, ' > RSI, Standard Deviation, R% Chart Exit ' + '\n')
+
+    # macd & Williams % R Looking Back 14 Days
+    def macd_willR():
+
+        exp20 = daily['Close'].ewm(span=20, adjust=False).mean()
+        exp128 = daily['Close'].ewm(span=128, adjust=False).mean()
+        exp200 = daily['Close'].ewm(span=200, adjust=False).mean()
+        daily['New_col'] = -20
+        daily['New_col2'] = -80
+
+        #measure the MACD using exp26-exp12
+        exp12 = daily['Close'].ewm(span=12, adjust=False).mean()
+        exp26 = daily['Close'].ewm(span=26, adjust=False).mean()
+        macd = exp12 - exp26
+
+        signal = macd.ewm(span=9, adjust=False).mean()
+        histogram = macd - signal 
+
+        high = daily['High'].rolling(14).max()
+        low  = daily['Low'].rolling(14).min()
+        wr = (-100 * ((high - daily['Close']) / (high - low)))
+        line_20 = daily['New_col']
+        line_80 = daily['New_col2']
+        #sma20  = daily['Close'].rolling(20).mean()
+        #sma50  = daily['Close'].rolling(50).mean()
+        #sma200 = daily ['Close'].rolling(200).mean()
+        
+        output.insert(END, ' > MACD & William % R Chart Run ' + '\n')
+
+        apds = [mpf.make_addplot(exp20,color='g'),
+            mpf.make_addplot(exp128,color='black'),
+            mpf.make_addplot(exp200,color='r'), 
+            mpf.make_addplot(wr,
+                            type='line',
+                            width=0.7,panel=1,
+                            color= 'b' ,
+                            alpha=1,
+                            secondary_y=False,
+                            ),
+            mpf.make_addplot(line_20,panel=1,color='g',secondary_y=False),
+            mpf.make_addplot(line_80,panel=1,color='r',secondary_y=False),
+            mpf.make_addplot(histogram,
+                            type='bar',
+                            width=0.7,panel=2,
+                            color= ['darkgreen' if x >= 0 else 'darkred' for x in histogram],
+                            alpha=1,
+                            secondary_y=False,
+                            ),
+            mpf.make_addplot(macd,panel=2,color='fuchsia',secondary_y=True),
+            mpf.make_addplot(signal,panel=2,color='b',secondary_y=True)
+            ]
+        mpf.plot(daily,type='candle',addplot=apds,figscale=1.1,figratio=(8,5),title='\nMACD & William %R of ' + retrieve +' from '+ retrieve2 + ' to '+ END_DATE,
+            volume=False,panel_ratios=(6,3,2))
+        output.insert(END, ' > MACD & William % R Chart Exit ' + '\n')
+
+    # Williams % R Looking Back 14 Days
+    def williamR():
+
+        exp20 = daily['Close'].ewm(span=20, adjust=False).mean()
+        exp128 = daily['Close'].ewm(span=128, adjust=False).mean()
+        exp200 = daily['Close'].ewm(span=200, adjust=False).mean()
+        daily['New_col'] = -20
+        daily['New_col2'] = -80
+
+        high = daily['High'].rolling(14).max()
+        low  = daily['Low'].rolling(14).min()
+        wr = (-100 * ((high - daily['Close']) / (high - low)))
+        line_20 = daily['New_col']
+        line_80 = daily['New_col2']
+        #sma20  = daily['Close'].rolling(20).mean()
+        #sma50  = daily['Close'].rolling(50).mean()
+        #sma200 = daily ['Close'].rolling(200).mean()
+        
+        output.insert(END, ' > William % R Chart Run ' + '\n')
+
+        apds = [mpf.make_addplot(exp20,color='g'),
+            mpf.make_addplot(exp128,color='black'),
+            mpf.make_addplot(exp200,color='r'), 
+            mpf.make_addplot(wr,
+                            type='line',
+                            width=0.7,panel=1,
+                            color= 'b' ,
+                            alpha=1,
+                            secondary_y=False,
+                            ),
+            mpf.make_addplot(line_20,panel=1,color='g',secondary_y=False),
+            mpf.make_addplot(line_80,panel=1,color='r',secondary_y=False)
+        ]
+        #output.insert(END, wr + '\n')
+
+        mpf.plot(daily,type='candle',addplot=apds,figscale=1.1,figratio=(8,5),title='\nWilliam %R of ' + retrieve +' from '+ retrieve2 + ' to '+ END_DATE,
+            volume=True,volume_panel=2,panel_ratios=(6,3,2))
+
+        #ax1 = plt.subplot2grid((11,1), (0,0), rowspan=5, colspan=1)
+        #ax2 = plt.subplot2grid((11,1), (6,0), rowspan=5, colspan=1)
+        #ax1.plot(daily['Close'], color = 'grey', linewidth = 2)
+        #ax1.plot(sma20, color = 'darkgreen', linewidth = 1.5)
+        #ax1.plot(sma50, color = 'orange', linewidth = 1.5)
+        #ax1.plot(sma200, color = 'darkred', linewidth = 1.5)
+        #ax1.set_title('Closing Price of ' + retrieve)
+        #ax2.plot(wr, color = 'fuchsia', linewidth = 2)
+        #ax2.axhline(-20, linewidth = 1.5, linestyle = '--', color = 'green')
+        #ax2.axhline(-80, linewidth = 1.5, linestyle = '--', color = 'red')
+        #ax2.set_title('Williams %R for ' + retrieve)
+        #plt.show()
+        output.insert(END, ' > William % R Chart Exit ' + '\n')
+
+    def macd():
+        exp20 = daily['Close'].ewm(span=20, adjust=False).mean()
+        exp50 = daily['Close'].ewm(span=50, adjust=False).mean()
+        exp128 = daily['Close'].ewm(span=128, adjust=False).mean()
+
+        #measure the MACD using exp26-exp12
+        exp12 = daily['Close'].ewm(span=12, adjust=False).mean()
+        exp26 = daily['Close'].ewm(span=26, adjust=False).mean()
+        macd = exp12 - exp26
+
+        signal = macd.ewm(span=9, adjust=False).mean()
+        histogram = macd - signal 
+
+        apds = [mpf.make_addplot(exp20,color='g'),
+            mpf.make_addplot(exp50,color='darkorange'),
+            mpf.make_addplot(exp128,color='black'), 
+            mpf.make_addplot(histogram,
+                            type='bar',
+                            width=0.7,panel=1,
+                            color= ['darkgreen' if x >= 0 else 'darkred' for x in histogram],
+                            alpha=1,
+                            secondary_y=False,
+                            ),
+            mpf.make_addplot(macd,panel=1,color='fuchsia',secondary_y=True),
+            mpf.make_addplot(signal,panel=1,color='b',secondary_y=True)
+        ]
+        output.insert(END, ' > MACD Chart Run ' + '\n')
+
+        mpf.plot(daily,type='candle',addplot=apds,figscale=1.1,figratio=(8,5),title='\nMACD of ' + retrieve +' from '+ retrieve2 + ' to '+ END_DATE,
+            volume=True,volume_panel=2,panel_ratios=(6,3,2))
+        output.insert(END, ' > MACD Chart Exit '+ '\n')
+
+        #daily['% Change'] = daily.pct_change(['Close'])
+
+    def yahoo_quote():
+        q_table = pd.DataFrame()
+        #q_table['Information', 'Value']
+        quote  = yaf.get_quote_table(retrieve)
+        q_keys = quote.keys()
+        q_vals = quote.values()
+        q_table[retrieve] = q_keys
+        q_table['Value'] = q_vals
+        q_table.set_index(retrieve, inplace = True)
+
+        infoput.insert(END, ' > quote table for ' + str(retrieve) + ' retrieved ' + '\n' + str(q_table) + '\n' + ' > end of quote for ' + retrieve + '\n' \
+            + '****************************************************' + '\n')
+
+    def balance_sheet():
+        balance = yaf.get_balance_sheet(retrieve)
+        infoput.insert(END, ' > balance sheet for ' + str(retrieve) + ' retrieved' + '\n' + str(balance) + '\n' + ' > end of balance sheet ' + retrieve + '\n' + '****************************************************' + '\n')
+
+    stock_tick = Text(root, height = 1, width = 25, bg ="black", fg="#35FF23")#.place(x=0, y=80)
+    Label(root, text="Enter Stock Ticker:", bg="black", fg="#35FF23").place(x=0, y=50)
+
+    def cash_flow():
+        cash_f = yaf.get_cash_flow(retrieve)
+        infoput.insert(END, ' > cash flow statement for ' + str(retrieve) + ' retrieved' + '\n' + str(cash_f) + '\n' + ' > end of cash flow statement ' + retrieve + '\n' + '****************************************************' + '\n')
+
+    def analyst_info():
+        analyst = yaf.get_analysts_info(retrieve)
+        infoput.insert(END, ' > analyst info for ' + str(retrieve) + ' retrieved' + '\n' + str(analyst) + '\n' + ' > end of analyst info ' + retrieve + '\n' + '****************************************************' + '\n')
+
+    # -------------------------------------------------------------------
+
+    #stock_tick.insert(END, 'Enter Stock Ticker')
+    stock_tick.pack(ipadx = 0, ipady = 5)
+    #print(type(stock_tick))
+
+    date = Text(root, height = 1, width = 25, bg ="black", fg="#35FF23")#.place(x=0, y=140)
+    Label(root, text="Enter Start Date: YYYY-MM-DD", bg="black", fg="#35FF23").place(x=0, y=80)
+    #date.insert(END, 'Enter Start Date: YYYY-MM-DD')
+    date.pack(ipadx = 0, ipady = 5)
+    #print(type(date))
+
+    Label(root, text="Stock Information:", bg="black", fg="#35FF23").place(x=0, y=140)
+    Label(root, text="Indicator Charts:", bg="black", fg="#35FF23").place(x=0, y=200)
+
+    Label(root, text="Terminal V 1.0", bg="black", fg="#35FF23").place(x=0, y=550)
+
+    Label(root, text="Color Codes: " + '\n' + "green: ex20" +'\n' + "orange: ex50" + '\n' + "black: ex128 Support" + '\n' + "red: ex200", bg="black", fg="#35FF23").place(x=550, y=80)
+
+    confirm_tick = Button(root, height = 1, width = 15, text = "Retrieve Data", command=lambda: retrieve_data()).place(x=550, y=50)
+    #confirm_date = Button(root, height = 1, width = 15, text = "Confirm Date", command=lambda: date_confirm()).place(x=550, y=80)
+
+    stock_quote     = Button(root, height = 1, width = 15, text = "Get Stock Quote", command=lambda: yahoo_quote()).place(x=0, y=165)
+    balance_she     = Button(root, height = 1, width = 15, text = "Get Balance Sheet", command=lambda: balance_sheet()).place(x=175, y=165)
+    flow_output     = Button(root, height = 1, width = 15, text = "Get Cash Flow", command=lambda: cash_flow()).place(x=350, y=165)
+    analyst_output  = Button(root, height = 1, width = 15, text = "Analyst Info", command=lambda: analyst_info()).place(x=525, y=165)
+
+
+    macd_button  = Button(root, height = 1, width = 15, text = "MACD", command=lambda: macd()).place(x=0, y=230)
+    willR_button = Button(root, height = 1, width = 15, text = "William %R", command=lambda: williamR()).place(x=175, y=230)
+    macd_william = Button(root, height = 1, width = 15, text = "MACD & William %R", command=lambda: macd_willR()).place(x=350, y=230)
+    rsi_std     = Button(root, height = 1, width = 15, text = "RSI, Standard Deviation, R%", command=lambda: rsi_stddev()).place(x=0, y=260)
+
+
+    output = Text(root, height=3, width=65, bg='gainsboro')
+    infoput = Text(root, height=3, width=65, bg='gainsboro')
+    output.pack(fill=X, side=BOTTOM, ipady = 100)
+    infoput.pack(fill=X, side=BOTTOM, ipady = 100)
+
+splash_root.after(2000, main_terminal)
+mainloop()
