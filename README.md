@@ -1,13 +1,13 @@
 # stock_indicators
 Python programs for stock indicators and analysis. 
 
-**** equity_screener ****
+**** equity_screener - April 22
 - version 1
 
 1) Python program that integrates mplfinance and tkinter to build a dynamic stock tool to see the MACD, RSI, Standard Deviation, EMA, and volume of an equity.
 2) Choose the start date while the end date is the current day.
 
-**** MACD_V1 ****
+**** MACD_V1 
 
 credits for MACD_V1 -- these are sources that helped me put together MACD_V1:
 - version 1
